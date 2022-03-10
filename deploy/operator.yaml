@@ -2,12 +2,14 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: aws-ssm-operator
-  namespace: kube-system
+  namespace: aws-ssm
   labels:
     app: aws-ssm-operator
     ssm.aws/release: v0.2.1
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       name: aws-ssm-operator
@@ -19,7 +21,7 @@ spec:
       serviceAccountName: aws-ssm-operator
       containers:
         - name: aws-ssm-operator
-          image: toversus/aws-ssm-operator:v0.2.1
+          image: fr123k/aws-ssm-operator:v0.3.3
           ports:
             - containerPort: 60000
               name: metrics
@@ -46,4 +48,4 @@ spec:
             - name: OPERATOR_NAME
               value: "aws-ssm-operator"
             - name: AWS_REGION
-              value: "ap-northeast-1"
+              value: "eu-central-1"

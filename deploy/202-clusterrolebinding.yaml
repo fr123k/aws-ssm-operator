@@ -7,7 +7,7 @@ metadata:
 subjects:
   - kind: ServiceAccount
     name: aws-ssm-operator
-    namespace: kube-system
+    namespace: aws-ssm
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
