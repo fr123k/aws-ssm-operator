@@ -6,3 +6,4 @@ spec:
   valueFrom:
     parameterStoreRef:
       path: /stg/foo-app/
+      recursive: true
