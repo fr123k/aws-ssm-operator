@@ -1,6 +1,7 @@
 package parameterstore
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -33,7 +34,7 @@ func (c *SSMClient) FetchParameterStoreValues(ref v1alpha1.ParameterStoreRef) (m
 	}
 
 	if ref.Name != "" {
-		log.Info("fetching values from SSM Parameter Store by name: %s", ref.Name)
+		log.Info("fetching values from SSM Parameter Store by name", "Name", ref.Name)
 		got, err := c.ssm.GetParameter(&ssm.GetParameterInput{
 			Name:           aws.String(ref.Name),
 			WithDecryption: aws.Bool(true),
@@ -45,19 +46,25 @@ func (c *SSMClient) FetchParameterStoreValues(ref v1alpha1.ParameterStoreRef) (m
 		return map[string]string{"name": aws.StringValue(got.Parameter.Value)}, nil
 	}
 
-	log.Info("fetching values from SSM Parameter Store by path: %s", ref.Path)
+	log.Info("fetching values from SSM Parameter Store by path", "Path", ref.Path, "Recursive", ref.Recursive)
 	got, err := c.ssm.GetParametersByPath(&ssm.GetParametersByPathInput{
 		Path:           aws.String(ref.Path),
 		WithDecryption: aws.Bool(true),
+		Recursive:      aws.Bool(ref.Recursive),
+		MaxResults:     aws.Int64(100),
 	})
 	if err != nil {
 		return nil, err
 	}
 
+	log.Info("fetching values from SSM Parameter Store by path", "Params", fmt.Sprintf("%+v", got.Parameters))
+
 	dict := make(map[string]string, len(got.Parameters))
 	for _, p := range got.Parameters {
 		ss := strings.Split(aws.StringValue(p.Name), "/")
-		dict[ss[len(ss)-1]] = aws.StringValue(p.Value)
+		name := strings.ToUpper(ss[len(ss)-1])
+		name = strings.ReplaceAll(name, "-", "_")
+		dict[name] = aws.StringValue(p.Value)
 	}
 
 	return dict, nil

@@ -19,6 +19,8 @@ type ValueFrom struct {
 type ParameterStoreRef struct {
 	Name string `json:"name"`
 	Path string `json:"path"`
+	// +kubebuilder:default:=true
+	Recursive bool `json:"recursive"`
 }
 
 // ParameterStoreStatus defines the observed state of ParameterStore
