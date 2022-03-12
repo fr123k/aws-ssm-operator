@@ -131,7 +131,18 @@ func (r *ReconcileParameterStore) newSecretForCR(cr *ssmv1alpha1.ParameterStore)
 		r.ssmc = newSSMClient(nil)
 	}
 	ref := cr.Spec.ValueFrom.ParameterStoreRef
-	data, err := r.ssmc.SSMParameterValueToSecret(ref)
+	data1, err := r.ssmc.SSMParameterValueToSecret(ref)
+
+	if err != nil {
+		return nil, errs.Wrap(err, "failed to get json secret as map")
+	}
+
+	data2, err := r.ssmc.SSMParametersValueToSecret(cr.Spec.ValueFrom.ParametersStoreRef)
+
+	for k, v := range data1 {
+		data2[k] = v
+	}
+
 	if err != nil {
 		return nil, errs.Wrap(err, "failed to get json secret as map")
 	}
@@ -141,6 +152,6 @@ func (r *ReconcileParameterStore) newSecretForCR(cr *ssmv1alpha1.ParameterStore)
 			Namespace: cr.Namespace,
 			Labels:    labels,
 		},
-		StringData: data,
+		StringData: data2,
 	}, nil
 }

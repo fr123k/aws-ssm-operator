@@ -72,7 +72,55 @@ func (c *SSMClient) FetchParameterStoreValues(ref v1alpha1.ParameterStoreRef) (m
 
 // SSMParameterValueToSecret shapes fetched value so as to store them into K8S Secret
 func (c *SSMClient) SSMParameterValueToSecret(ref v1alpha1.ParameterStoreRef) (map[string]string, error) {
-	params, err := c.FetchParameterStoreValues(ref)
+	if ref.Name != "" || ref.Path != "" {
+		params, err := c.FetchParameterStoreValues(ref)
+		if err != nil {
+			return nil, err
+		}
+		if params == nil {
+			return nil, errs.New("fetched value must not be nil")
+		}
+
+		return params, nil
+	}
+	return map[string]string{}, nil
+}
+
+func (c *SSMClient) FetchParametersStoreValues(refs []v1alpha1.ParametersStoreRef) (map[string]string, error) {
+	if c.s == nil {
+		c.s = session.Must(session.NewSession())
+	}
+
+	if c.ssm == nil {
+		c.ssm = ssm.New(c.s)
+	}
+
+	dict := make(map[string]string)
+	for _, ref := range refs {
+		log.Info("fetching values from SSM Parameter Store", "Key", ref.Key, "Name", ref.Name)
+		got, err := c.ssm.GetParameter(&ssm.GetParameterInput{
+			Name:           aws.String(ref.Key),
+			WithDecryption: aws.Bool(true),
+		})
+		if err != nil {
+			log.Error(err, "error fetching values from SSM Parameter Store", "Key", ref.Key, "Name", ref.Name)
+			dict[ref.Name] = err.Error()
+			continue
+		}
+		name := ref.Name
+		if name == "" {
+			ss := strings.Split(aws.StringValue(got.Parameter.Name), "/")
+			name = strings.ToUpper(ss[len(ss)-1])
+			name = strings.ReplaceAll(name, "-", "_")
+		}
+		dict[name] = aws.StringValue(got.Parameter.Value)
+	}
+
+	return dict, nil
+}
+
+func (c *SSMClient) SSMParametersValueToSecret(ref []v1alpha1.ParametersStoreRef) (map[string]string, error) {
+	params, err := c.FetchParametersStoreValues(ref)
 	if err != nil {
 		return nil, err
 	}

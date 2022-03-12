@@ -1,7 +1,7 @@
 .PHONY: build
 
 IMAGE?=fr123k/aws-ssm-operator
-VERSION?=v0.3.2
+VERSION?=v0.4.1
 
 build:
 	docker build -t ${IMAGE}:${VERSION} --platform linux/amd64 ./

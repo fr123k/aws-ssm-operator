@@ -13,7 +13,8 @@ type ParameterStoreSpec struct {
 }
 
 type ValueFrom struct {
-	ParameterStoreRef ParameterStoreRef `json:"parameterStoreRef"`
+	ParameterStoreRef  ParameterStoreRef  `json:"parameterStoreRef"`
+	ParametersStoreRef []ParametersStoreRef `json:"parametersStoreRef"`
 }
 
 type ParameterStoreRef struct {
@@ -21,6 +22,11 @@ type ParameterStoreRef struct {
 	Path string `json:"path"`
 	// +kubebuilder:default:=true
 	Recursive bool `json:"recursive"`
+}
+
+type ParametersStoreRef struct {
+	Name string `json:"name"`
+	Key  string `json:"key"`
 }
 
 // ParameterStoreStatus defines the observed state of ParameterStore
