@@ -6,11 +6,13 @@ namespace: aws-ssm
 # "wordpress" becomes "alices-wordpress".
 # Note that it should also match with the prefix (text before '-') of the namespace
 # field above.
-namePrefix: aws-ssm
+namePrefix: aws-ssm-
 
 # Labels to add to all resources and selectors.
-#commonLabels:
+commonLabels:
 #  someName: someValue
+  app: aws-ssm-operator
+
 
 bases:
 - ../crd
@@ -43,7 +45,7 @@ patchesStrategicMerge:
 # 'CERTMANAGER' needs to be enabled to use ca injection
 #- webhookcainjection_patch.yaml
 
-- manager_config_localstack.yaml
+# - manager_config_localstack.yaml
 
 # the following config is for teaching kustomize how to do var substitution
 vars:

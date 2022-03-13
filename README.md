@@ -51,7 +51,7 @@ In case of using EKS Cluster as your Kubernetes platform, attach `AmazonSSMReadO
 
 ```bash
 # Setup Service Account
-kubectl apply -f deploy/
+make deploy
 
 # Verify that a Pod is running
 kubectl get pod -l app=aws-ssm-operator --watch -n kube-system
@@ -63,10 +63,13 @@ Create an sample Paramter Store resource:
 
 ```bash
 # Create an example Parameter Store resource by name
-$ kubectl create -f example/name/database.yaml
+$ kubectl create -f example/parameterStoreRef/database-name.yaml
 
 # Create an example Parameter Store resource by path
-$ kubectl create -f example/path/database.yaml
+$ kubectl create -f example/parameterStoreRef/database-path.yaml
+
+# Create an example Parameters Store resource by path
+$ kubectl create -f example/parameterStoreRef/parameters.yaml
 ```
 
 ## Verifying
@@ -101,36 +104,10 @@ Data
 name:  7 bytes
 ```
 
-You can reference secret data in your Pod declaration as follows:
-
+You can reference secret data in your Deployment declaration as follows:
 ```yaml
-apiVersion: v1
-kind: Pod
-metadata:
-  name: sample-app-pod
-spec:
-  containers:
-  - name: sample-app
-    image: toversus/sample-app
-    env:
-      - name: DB_USER
-        valueFrom:
-          secretKeyRef:
-            name: dbuser
-            key: name
-      - name: DB_PASSWORD
-        valueFrom:
-          secretKeyRef:
-            name: dbpassword
-            key: name
-  restartPolicy: Never
-```
-
-In Knative Service resource, you can define them in containers spec:
-
-```yaml
-   apiVersion: serving.knative.dev/v1alpha1
-   kind: Service
+   apiVersion: apps/v1
+   kind: Deployment
    metadata:
      name: sample-app
    spec:
@@ -166,58 +143,60 @@ Type:  Opaque
 
 Data
 ====
-dbpassword:  9 bytes
-dbuser:      7 bytes
+dbpassword:  10 bytes
+dbuser:      6 bytes
 ```
 
-You can reference secret data in your Pod declaration as follows:
+You can reference secret data in your Deployment declaration as follows:
 
 ```yaml
-apiVersion: v1
-kind: Pod
+apiVersion: apps/v1
+kind: Deployment
 metadata:
   name: sample-app-pod
 spec:
   containers:
   - name: sample-app
     image: toversus/sample-app
-    env:
-      - name: DB_USER
-        valueFrom:
-          secretKeyRef:
-            name: foo-app
-            key: dbuser
-      - name: DB_PASSWORD
-        valueFrom:
-          secretKeyRef:
-            name: foo-app
-            key: dbpassword
+    envFrom:
+    - secretRef:
+        name: foo-app
   restartPolicy: Never
 ```
+### Fetch SSM Parameters by multiple paths
 
-In Knative Service resource, you can define them in containers spec:
+In case of putting parameters together from certain paths, you can find your credentials in single Secret resource as follows. The key to secret data is **full path**. The following example shows that your credentials are located in `/stg/foo-app/user/dbuser` and `/stg/foo-app/password/dbpassword`, so you can retrieve them by `dbuser` and `dbpassword` keys respectively.
+
+```bash
+$ kubectl describe secret foo-app-keys
+Name:         foo-app-keys
+Namespace:    default
+Labels:       app=foo-app-keys
+Annotations:  <none>
+
+Type:  Opaque
+
+Data
+====
+dbpassword:  10 bytes
+dbuser:      7 bytes
+```
+
+You can reference secret data in your Deployment declaration as follows:
 
 ```yaml
-   apiVersion: serving.knative.dev/v1alpha1
-   kind: Service
-   metadata:
-     name: sample-app
-   spec:
-     template:
-       spec:
-         containers:
-           - image: toversus/sample-app
-             env:
-               - name: DB_USER
-                 valueFrom:
-                   secretKeyRef:
-                     name: foo-app
-                     key: dbuser
-               - name: DB_PASSWORD
-                 valueFrom:
-                   secretKeyRef:
-                     name: foo-app
-                     key: dbpassword
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sample-app-pod
+spec:
+  containers:
+  - name: sample-app
+    image: toversus/sample-app
+    envFrom:
+    - secretRef:
+        name: foo-app-keys
+  restartPolicy: Never
 ```
 
 ## Clean up
@@ -225,7 +204,8 @@ In Knative Service resource, you can define them in containers spec:
 To clean up all the components:
 
 ```bash
-kubectl delete -f deploy/
+make undeploy
+kubectl delete -f example/
 ```
 
 ## Acknowledgements
