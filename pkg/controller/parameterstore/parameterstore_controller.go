@@ -109,15 +109,15 @@ func (r *ReconcileParameterStore) Reconcile(request reconcile.Request) (reconcil
 	// Check if this Secret already exists
 	current := &corev1.Secret{}
 	err = r.client.Get(context.TODO(), types.NamespacedName{Name: desired.Name, Namespace: desired.Namespace}, current)
-    if err != nil {
-        if errors.IsNotFound(err) {
-            reqLogger.Info("Creating a new Secret", "desired.Namespace", desired.Namespace, "desired.Name", desired.Name)
-            err = r.client.Create(context.TODO(), desired)
-        }
-    } else {
-        reqLogger.Info("Updating an existing Secret", "desired.Namespace", desired.Namespace, "desired.Name", desired.Name)
-        err = r.client.Update(context.TODO(), desired)
-    }
+	if err != nil {
+		if errors.IsNotFound(err) {
+			reqLogger.Info("Creating a new Secret", "desired.Namespace", desired.Namespace, "desired.Name", desired.Name)
+			err = r.client.Create(context.TODO(), desired)
+		}
+	} else {
+		reqLogger.Info("Updating an existing Secret", "desired.Namespace", desired.Namespace, "desired.Name", desired.Name)
+		err = r.client.Update(context.TODO(), desired)
+	}
 
 	return reconcile.Result{}, err
 }
@@ -137,7 +137,7 @@ func (r *ReconcileParameterStore) newSecretForCR(cr *ssmv1alpha1.ParameterStore)
 		return nil, errs.Wrap(err, "failed to get json secret as map")
 	}
 
-	data2, err := r.ssmc.SSMParametersValueToSecret(cr.Spec.ValueFrom.ParametersStoreRef)
+	data2, anno, err := r.ssmc.SSMParametersValueToSecret(cr.Spec.ValueFrom.ParametersStoreRef)
 
 	for k, v := range data1 {
 		data2[k] = v
@@ -148,9 +148,10 @@ func (r *ReconcileParameterStore) newSecretForCR(cr *ssmv1alpha1.ParameterStore)
 	}
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      cr.Name,
-			Namespace: cr.Namespace,
-			Labels:    labels,
+			Name:        cr.Name,
+			Namespace:   cr.Namespace,
+			Labels:      labels,
+			Annotations: anno,
 		},
 		StringData: data2,
 	}, nil

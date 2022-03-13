@@ -2,9 +2,11 @@ package parameterstore
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ssm"
 	errs "github.com/pkg/errors"
@@ -17,6 +19,21 @@ type SSMClient struct {
 	ssm *ssm.SSM
 }
 
+func awsCfg() *aws.Config {
+	if lsEp := os.Getenv("LOCAL_STACK_ENDPOINT"); lsEp != "" {
+		log.Info("Setup localstack aws client")
+		cfg := &aws.Config{
+			Region:                 aws.String("us-east-1"),
+			Credentials:            credentials.NewStaticCredentials("test", "test", ""),
+			S3ForcePathStyle:       aws.Bool(true),
+			Endpoint:               aws.String(lsEp),
+			DisableParamValidation: aws.Bool(true),
+		}
+		return cfg
+	}
+	return nil
+}
+
 func newSSMClient(s *session.Session) *SSMClient {
 	return &SSMClient{
 		s: s,
@@ -26,7 +43,7 @@ func newSSMClient(s *session.Session) *SSMClient {
 // FetchParameterStoreValue fetches decrypted values from SSM Parameter Store
 func (c *SSMClient) FetchParameterStoreValues(ref v1alpha1.ParameterStoreRef) (map[string]string, error) {
 	if c.s == nil {
-		c.s = session.Must(session.NewSession())
+		c.s = session.Must(session.NewSession(awsCfg()))
 	}
 
 	if c.ssm == nil {
@@ -86,9 +103,9 @@ func (c *SSMClient) SSMParameterValueToSecret(ref v1alpha1.ParameterStoreRef) (m
 	return map[string]string{}, nil
 }
 
-func (c *SSMClient) FetchParametersStoreValues(refs []v1alpha1.ParametersStoreRef) (map[string]string, error) {
+func (c *SSMClient) FetchParametersStoreValues(refs []v1alpha1.ParametersStoreRef) (map[string]string, map[string]string, error) {
 	if c.s == nil {
-		c.s = session.Must(session.NewSession())
+		c.s = session.Must(session.NewSession(awsCfg()))
 	}
 
 	if c.ssm == nil {
@@ -96,6 +113,8 @@ func (c *SSMClient) FetchParametersStoreValues(refs []v1alpha1.ParametersStoreRe
 	}
 
 	dict := make(map[string]string)
+	anno := make(map[string]string)
+
 	for _, ref := range refs {
 		log.Info("fetching values from SSM Parameter Store", "Key", ref.Key, "Name", ref.Name)
 		got, err := c.ssm.GetParameter(&ssm.GetParameterInput{
@@ -104,7 +123,7 @@ func (c *SSMClient) FetchParametersStoreValues(refs []v1alpha1.ParametersStoreRe
 		})
 		if err != nil {
 			log.Error(err, "error fetching values from SSM Parameter Store", "Key", ref.Key, "Name", ref.Name)
-			dict[ref.Name] = err.Error()
+			anno[fmt.Sprintf("ssm.aws/%s_error", ref.Key)] = err.Error()
 			continue
 		}
 		name := ref.Name
@@ -116,17 +135,17 @@ func (c *SSMClient) FetchParametersStoreValues(refs []v1alpha1.ParametersStoreRe
 		dict[name] = aws.StringValue(got.Parameter.Value)
 	}
 
-	return dict, nil
+	return dict, anno, nil
 }
 
-func (c *SSMClient) SSMParametersValueToSecret(ref []v1alpha1.ParametersStoreRef) (map[string]string, error) {
-	params, err := c.FetchParametersStoreValues(ref)
+func (c *SSMClient) SSMParametersValueToSecret(ref []v1alpha1.ParametersStoreRef) (map[string]string, map[string]string, error) {
+	params, anno, err := c.FetchParametersStoreValues(ref)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if params == nil {
-		return nil, errs.New("fetched value must not be nil")
+		return nil, nil, errs.New("fetched value must not be nil")
 	}
 
-	return params, nil
+	return params, anno, nil
 }
