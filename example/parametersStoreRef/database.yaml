@@ -1,11 +1,16 @@
 apiVersion: ssm.aws/v1alpha1
 kind: ParameterStore
 metadata:
-  name: foo-app
+  annotations:
+    update: now
+  name: test
+  namespace: default
 spec:
   valueFrom:
     parametersStoreRef:
-    - key: /aurora/mysql/stg/dbpassword
-      name: DB_PASSWORD
-    - key: /aurora/mysql/stg/dbuser
-      name: DB_USER
+      - name: PARAM1
+        key: /cloud/app/param1
+      - name: PARAM2
+        key: /cloud/app/param2
+      - name: PARAM3
+        key: /cloud/app/param3
