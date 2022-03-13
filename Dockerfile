@@ -32,9 +32,10 @@ COPY vendor ./vendor
 COPY cmd ./cmd
 COPY pkg ./pkg
 
-# Build the executable to `/app`. Mark the build as statically linked and
-# inject the version as a global variable.
-RUN go build \
+# inject the version as a global variable.RUN
+RUN --mount=type=cache,id=gomod,target=/go/pkg/mod \
+    --mount=type=cache,id=gobuild,target=/root/.cache/go-build \
+    CGO_ENABLED=0 go build \
     -installsuffix 'static' \
     -ldflags "-X main.Version=${APP_VERSION}" \
     -o /usr/local/bin/aws-ssm-operator -v \
@@ -50,8 +51,8 @@ ARG GIT_COMMIT=undefined
 ARG BUILD_DATE=undefined
 
 LABEL org.opencontainers.image.created="$BUILD_DATE"
-LABEL org.opencontainers.image.description="release insight service"
-LABEL org.opencontainers.image.source="https://github.com/planetly/release-insight-service"
+LABEL org.opencontainers.image.description="aws-ssm-operator"
+LABEL org.opencontainers.image.source="https://github.com/fr123k/aws-ssm-operator"
 LABEL org.opencontainers.image.revision="$GIT_COMMIT"
 LABEL org.opencontainers.image.version="$APP_VERSION"
 LABEL go-version="${GO_VERSION}"
