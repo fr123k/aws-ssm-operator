@@ -20,6 +20,19 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+const (
+	// ReconciliationSucceededReason represents the fact that the reconciliation of
+	// the resource has succeeded.
+	ReconciliationSucceededReason string = "ReconciliationSucceeded"
+
+	// ReconciliationFailedReason represents the fact that the reconciliation of
+	// the resource has failed.
+	ReconciliationFailedReason   string = "ReconciliationFailed"
+	ConditionTypeSSMParamMissing string = "SSMParamMissing"
+	ConditionTypeSSMError        string = "SSMError"
+	ConditionTypeReady           string = "Ready"
+)
+
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
@@ -39,14 +52,14 @@ type ValueFrom struct {
 }
 
 type ParameterStoreRef struct {
-	Name string `json:"name"`
-	Path string `json:"path"`
+	Name string `json:"name,omitempty"`
+	Path string `json:"path,omitempty"`
 	// +kubebuilder:default:=true
-	Recursive bool `json:"recursive"`
+	Recursive bool `json:"recursive,omitempty"`
 }
 
 type ParametersStoreRef struct {
-	Name string `json:"name"`
+	Name string `json:"name,omitempty"`
 	Key  string `json:"key"`
 }
 
@@ -54,6 +67,24 @@ type ParametersStoreRef struct {
 type ParameterStoreStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
+	SecretStatus *SecretStatus      `json:"secret,omitempty"`
+	SSMStatus    *SSMStatus         `json:"ssm,omitempty"`
+	Conditions   []metav1.Condition `json:"conditions,omitempty"`
+}
+
+type SecretStatus struct {
+	Name      string `json:"name,omitempty"`
+	Namespace string `json:"namespace,omitempty"`
+}
+
+type SSMStatus struct {
+	Error string      `json:"error,omitempty"`
+	Key   []KeyStatus `json:"keys,omitempty"`
+}
+
+type KeyStatus struct {
+	Name  string `json:"name,omitempty"`
+	Error string `json:"error,omitempty"`
 }
 
 //+kubebuilder:object:root=true
