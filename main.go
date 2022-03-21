@@ -33,7 +33,10 @@ import (
 
 	ssmv1alpha1 "github.com/fr123k/aws-ssm-operator/api/v1alpha1"
 	"github.com/fr123k/aws-ssm-operator/controllers"
+
 	//+kubebuilder:scaffold:imports
+
+	awsCli "github.com/fr123k/aws-ssm-operator/pkg/aws"
 )
 
 var (
@@ -81,6 +84,7 @@ func main() {
 	if err = (&controllers.ParameterStoreReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
+		SSMc:   awsCli.NewSSMClient(nil),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ParameterStore")
 		os.Exit(1)

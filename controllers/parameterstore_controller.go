@@ -18,22 +18,30 @@ package controllers
 
 import (
 	"context"
+	"fmt"
+	"reflect"
+	_ "time"
 
-	errs "github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	_ "k8s.io/client-go/util/workqueue"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	_ "sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	ssmv1alpha1 "github.com/fr123k/aws-ssm-operator/api/v1alpha1"
+
+	awsCli "github.com/fr123k/aws-ssm-operator/pkg/aws"
 )
 
 var log = logf.Log.WithName("parameterstore-controller")
@@ -43,7 +51,7 @@ type ParameterStoreReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
 
-	ssmc *SSMClient
+	SSMc *awsCli.SSMClient
 }
 
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
@@ -82,7 +90,52 @@ func (r *ParameterStoreReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 	// Define a new Secret object
 	desired, err := r.newSecretForCR(instance)
 	if err != nil {
-		return reconcile.Result{}, errs.Wrap(err, "failed to compute secret for cr")
+		var ssmStatus ssmv1alpha1.SSMStatus
+		var conditionType string
+		// Update status.Nodes if needed
+		if ssmErr, ok := err.(*awsCli.SSMError); ok {
+			ks := make([]ssmv1alpha1.KeyStatus, len(ssmErr.ParameterErrors))
+			for i, e := range ssmErr.ParameterErrors {
+				ks[i] = ssmv1alpha1.KeyStatus{Name: e.Name, Error: e.Error()}
+			}
+			ssmStatus = ssmv1alpha1.SSMStatus{
+				Key: ks,
+			}
+			conditionType = ssmv1alpha1.ConditionTypeSSMParamMissing
+		} else {
+			ssmStatus = ssmv1alpha1.SSMStatus{
+				Error: err.Error(),
+			}
+			conditionType = ssmv1alpha1.ConditionTypeSSMError
+		}
+		if !reflect.DeepEqual(ssmStatus, instance.Status.SSMStatus) {
+			instance.Status.SSMStatus = &ssmStatus
+			err := r.Status().Update(ctx, instance)
+			if err != nil {
+				log.Error(err, "Failed to update ParameterStore status")
+				return reconcile.Result{}, err
+			}
+		}
+		{
+			readyCondition := metav1.Condition{
+				Status:             metav1.ConditionFalse,
+				Reason:             ssmv1alpha1.ReconciliationFailedReason,
+				Message:            err.Error(),
+				Type:               conditionType,
+				ObservedGeneration: instance.GetGeneration(),
+			}
+			apimeta.SetStatusCondition(&instance.Status.Conditions, readyCondition)
+			err := r.Status().Update(ctx, instance)
+			if err != nil {
+				log.Error(err, "Failed to update ParameterStore status")
+				return reconcile.Result{}, err
+			}
+		}
+
+		log.Error(err, "Failed to fetch SSM parameters status")
+		return reconcile.Result{}, err
+	} else {
+		instance.Status.SSMStatus = nil
 	}
 
 	// Set ParameterStore instance as the owner and controller
@@ -103,7 +156,39 @@ func (r *ParameterStoreReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		err = r.Client.Update(context.TODO(), desired)
 	}
 
-	return reconcile.Result{}, err
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+
+	// Update status.Nodes if needed
+	secretStatus := ssmv1alpha1.SecretStatus{
+		Name:      desired.Name,
+		Namespace: desired.Namespace,
+	}
+	if !reflect.DeepEqual(secretStatus, instance.Status.SecretStatus) {
+		instance.Status.SecretStatus = &secretStatus
+		err := r.Status().Update(ctx, instance)
+		if err != nil {
+			log.Error(err, "Failed to update ParameterStore status")
+			return reconcile.Result{}, err
+		}
+	}
+
+	readyCondition := metav1.Condition{
+		Status:             metav1.ConditionTrue,
+		Reason:             ssmv1alpha1.ReconciliationSucceededReason,
+		Message:            fmt.Sprintf("Secret %s in ready state", desired.Name),
+		Type:               ssmv1alpha1.ConditionTypeReady,
+		ObservedGeneration: instance.GetGeneration(),
+	}
+	apimeta.SetStatusCondition(&instance.Status.Conditions, readyCondition)
+	err = r.Status().Update(ctx, instance)
+	if err != nil {
+		log.Error(err, "Failed to update ParameterStore status")
+		return reconcile.Result{}, err
+	}
+
+	return reconcile.Result{}, nil
 }
 
 // newSecretForCR returns a Secret with the same name/namespace as the cr
@@ -111,24 +196,21 @@ func (r *ParameterStoreReconciler) newSecretForCR(cr *ssmv1alpha1.ParameterStore
 	labels := map[string]string{
 		"app": cr.Name,
 	}
-	if r.ssmc == nil {
-		r.ssmc = newSSMClient(nil)
-	}
 	ref := cr.Spec.ValueFrom.ParameterStoreRef
-	data1, err := r.ssmc.SSMParameterValueToSecret(ref)
+	data1, err := r.SSMc.SSMParameterValueToSecret(ref)
 
 	if err != nil {
-		return nil, errs.Wrap(err, "failed to get json secret as map")
+		return nil, err
 	}
 
-	data2, anno, err := r.ssmc.SSMParametersValueToSecret(cr.Spec.ValueFrom.ParametersStoreRef)
+	data2, anno, err := r.SSMc.SSMParametersValueToSecret(cr.Spec.ValueFrom.ParametersStoreRef)
 
 	for k, v := range data1 {
 		data2[k] = v
 	}
 
 	if err != nil {
-		return nil, errs.Wrap(err, "failed to get json secret as map")
+		return nil, err
 	}
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -145,5 +227,8 @@ func (r *ParameterStoreReconciler) newSecretForCR(cr *ssmv1alpha1.ParameterStore
 func (r *ParameterStoreReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&ssmv1alpha1.ParameterStore{}).
+		// WithOptions(controller.Options{RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second)}).
+		//This ignores changes on the Custome Resource that were made outside of the Spec like Metadata or Status.
+		WithEventFilter(predicate.GenerationChangedPredicate{}).
 		Complete(r)
 }
