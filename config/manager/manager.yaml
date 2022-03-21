@@ -31,8 +31,8 @@ spec:
         - /manager
         args:
         - --leader-elect
-        image: controller:latest
-        imagePullPolicy: Never
+        image: fr123k/aws-ssm-operator:0.0.2
+        imagePullPolicy: Always
         name: manager
         securityContext:
           allowPrivilegeEscalation: false
@@ -57,17 +57,5 @@ spec:
           requests:
             cpu: 10m
             memory: 64Mi
-        env:
-        - name: AWS_REGION
-          value: "us-east-1"
-        # this is for aws localstack development
-        - name: AWS_ACCESS_KEY_ID
-          value: "test"
-        - name: AWS_SECRET_ACCESS_KEY
-          value: "test"
-        - name: AWS_DEFAULT_REGION
-          value: "us-east-1"
-        - name: LOCAL_STACK_ENDPOINT
-          value: "http://192.168.49.2:31566"
       serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10
