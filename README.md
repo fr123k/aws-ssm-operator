@@ -23,6 +23,18 @@ aws ssm put-parameter \
     --type "SecureString" \
     --value "dbpassword" \
     --overwrite
+# Store database user with simple string
+aws ssm put-parameter \
+    --name "/stg/foo-app/user/dbuser" \
+    --type "String" \
+    --value "dbuser" \
+    --overwrite
+# Store database password encrypted with default KMS key
+aws ssm put-parameter \
+    --name "/stg/foo-app/password/dbpassword" \
+    --type "SecureString" \
+    --value "dbpassword" \
+    --overwrite
 ```
 
 So, you can retrieve DB credentials by certain path like below:
@@ -54,7 +66,7 @@ In case of using EKS Cluster as your Kubernetes platform, attach `AmazonSSMReadO
 make deploy
 
 # Verify that a Pod is running
-kubectl get pod -l app=aws-ssm-operator --watch -n kube-system
+kubectl get pod -l app=aws-ssm-operator --watch -n aws-ssm
 ```
 
 ## Usage
@@ -206,6 +218,68 @@ To clean up all the components:
 ```bash
 make undeploy
 kubectl delete -f example/
+```
+
+## Build
+
+```bash
+  # enable docker buildkit engine
+  export DOCKER_BUILDKIT=1
+  make docker-build
+```
+
+## Local Development
+
+### Prerequisites
+
+#### Minikube
+
+Installation for linux (Ubuntu)
+```bash
+  curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+  sudo install minikube-linux-amd64 /usr/local/bin/minikube
+```
+
+#### Localstack
+
+[localstack](https://localstack.cloud/)
+
+Direct installation
+```bash
+  sudo apt-get update
+  sudo apt-get install pip
+  pip install localstack
+```
+Helm Installation
+
+```bash
+  helm upgrade --install localstack localstack-repo/localstack
+```
+
+### Minikube
+
+```bash
+  minikube start
+```
+
+### Localstack
+
+```bash
+  export NODE_PORT=$(kubectl get --namespace default -o jsonpath="{.spec.ports[0].nodePort}" services localstack)
+  export NODE_IP=$(kubectl get nodes --namespace default -o jsonpath="{.items[0].status.addresses[0].address}")
+  export LOCALSTACK_HOST="http://$NODE_IP"
+  export LOCALSTACK_PORT="$NODE_PORT"
+```
+
+### awslocal
+```bash
+  alias awslocal="AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=us-east-1 aws --endpoint-url=${LOCALSTACK_HOST:-127.0.0.1}:${LOCALSTACK_PORT:-4566}"
+```
+
+### AWS SSM Operator
+
+```bash
+  KUSTOMIZE_PROFILE=config/local make docker-build deploy
 ```
 
 ## Acknowledgements
