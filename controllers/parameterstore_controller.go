@@ -20,7 +20,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
-	_ "time"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -41,10 +41,11 @@ import (
 
 	ssmv1alpha1 "github.com/fr123k/aws-ssm-operator/api/v1alpha1"
 
+	"github.com/fr123k/aws-ssm-operator/pkg/aws"
 	awsCli "github.com/fr123k/aws-ssm-operator/pkg/aws"
 )
 
-var log = logf.Log.WithName("parameterstore-controller")
+// var log = logf.Log.WithName("parameterstore-controller")
 
 // ParameterStoreReconciler reconciles a ParameterStore object
 type ParameterStoreReconciler struct {
@@ -69,6 +70,7 @@ type ParameterStoreReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.11.0/pkg/reconcile
 func (r *ParameterStoreReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	log := logf.FromContext(ctx)
 	reqLogger := log.WithValues("Request.Namespace", req.Namespace, "Request.Name", req.Name)
 
 	reqLogger.Info("Reconciling ParameterStore")
@@ -197,21 +199,32 @@ func (r *ParameterStoreReconciler) newSecretForCR(cr *ssmv1alpha1.ParameterStore
 		"app": cr.Name,
 	}
 	ref := cr.Spec.ValueFrom.ParameterStoreRef
-	data1, err := r.SSMc.SSMParameterValueToSecret(ref)
+	var data1 = make(map[string]string)
+	if ref != nil {
+		var err *aws.SSMError
+		data1, err = r.SSMc.SSMParameterValueToSecret(*ref)
 
-	if err != nil {
-		return nil, err
+		if err != nil {
+			return nil, err
+		}
 	}
+	var data2 = make(map[string]string)
+	var anno = make(map[string]string)
 
-	data2, anno, err := r.SSMc.SSMParametersValueToSecret(cr.Spec.ValueFrom.ParametersStoreRef)
+	if cr.Spec.ValueFrom.ParametersStoreRef != nil {
+		var err *aws.SSMError
+		data2, anno, err = r.SSMc.SSMParametersValueToSecret(cr.Spec.ValueFrom.ParametersStoreRef)
+
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	for k, v := range data1 {
 		data2[k] = v
 	}
 
-	if err != nil {
-		return nil, err
-	}
+	anno["aws-ssm-operator/updated"] = time.Now().Format(time.RFC3339)
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        cr.Name,

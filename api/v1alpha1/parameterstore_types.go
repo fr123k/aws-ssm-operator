@@ -46,7 +46,7 @@ type ParameterStoreSpec struct {
 
 type ValueFrom struct {
 	// +kubebuilder:validation:Optional
-	ParameterStoreRef ParameterStoreRef `json:"parameterStoreRef"`
+	ParameterStoreRef *ParameterStoreRef `json:"parameterStoreRef"`
 	// +kubebuilder:validation:Optional
 	ParametersStoreRef []ParametersStoreRef `json:"parametersStoreRef"`
 }
