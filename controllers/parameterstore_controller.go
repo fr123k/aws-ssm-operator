@@ -242,6 +242,6 @@ func (r *ParameterStoreReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&ssmv1alpha1.ParameterStore{}).
 		// WithOptions(controller.Options{RateLimiter: workqueue.NewItemExponentialFailureRateLimiter(1*time.Second, 10*time.Second)}).
 		//This ignores changes on the Custome Resource that were made outside of the Spec like Metadata or Status.
-		WithEventFilter(predicate.GenerationChangedPredicate{}).
+		WithEventFilter(predicate.Or(predicate.GenerationChangedPredicate{}, predicate.AnnotationChangedPredicate{})).
 		Complete(r)
 }
