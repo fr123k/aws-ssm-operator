@@ -1,100 +1,154 @@
 package aws
 
 import (
-	"context"
+	"flag"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
+	"os"
 	"testing"
+	"time"
 
-	"github.com/aws/aws-sdk-go-v2/service/ssm"
-	"github.com/aws/aws-sdk-go-v2/service/ssm/types"
-	"github.com/aws/aws-sdk-go/aws"
+	"github.com/cucumber/godog"
+	"github.com/cucumber/godog/colors"
 	"github.com/fr123k/aws-ssm-operator/api/v1alpha1"
-
-	"github.com/stretchr/testify/assert"
+	"github.com/spf13/pflag"
 )
 
-func TestLocalStackIntegration(t *testing.T) {
-	// Start a local HTTP server
-	server := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
-		// Test request parameters
-		assert.Equal(t, req.URL.String(), "/")
-		// Send response to be tested
-		rw.Write([]byte(`{
-			"Parameter": {
-				"ARN": "arn:aws:ssm:us-east-2:111122223333:parameter/MyGitHubPassword",
-				"DataType": "text",
-				"LastModifiedDate": 1582657288.8,
-				"Name": "MyGitHubPassword",
-				"Type": "SecureString",
-				"Value": "AYA39c3b3042cd2aEXAMPLE/AKIAIOSFODNN7EXAMPLE/fh983hg9awEXAMPLE==",
-				"Version": 3
-			}
-		}`))
-	}))
-	// Close the server when test finishes
-	defer server.Close()
-	t.Setenv("LOCAL_STACK_ENDPOINT", server.URL)
-	ssm := NewSSMClient(nil)
-	result, err := ssm.SSMParameterValueToSecret(v1alpha1.ParameterStoreRef{Name: "MyGitHubPassword"})
+type Queue []string
 
-	fmt.Printf("%+v", err)
+func NewQueue() *Queue         { return &Queue{} }
+func (q *Queue) Len() int      { return len(*q) }
+func (q *Queue) Push(x string) { *q = append(*q, x) }
 
-	assert.Nil(t, err)
-	assert.Equal(t, "AYA39c3b3042cd2aEXAMPLE/AKIAIOSFODNN7EXAMPLE/fh983hg9awEXAMPLE==", result["MyGitHubPassword"])
+func (q *Queue) Pop() string {
+	var el string
+	el, *q = (*q)[0], (*q)[1:]
+	return el
 }
 
-type SSMGetParameterImpl struct{}
+var goDogResponses = NewQueue()
 
-func (dt SSMGetParameterImpl) GetParameter(ctx context.Context,
-	params *ssm.GetParameterInput,
-	optFns ...func(*ssm.Options)) (*ssm.GetParameterOutput, error) {
+var result map[string]string
+var val string
+var params = make(map[string]string)
 
-	parameter := &types.Parameter{Name: aws.String("name"), Value: aws.String("aws-docs-example-parameter-value")}
-
-	output := &ssm.GetParameterOutput{
-		Parameter: parameter,
+func TestMain(m *testing.M) {
+	flag.Parse()
+	pflag.Parse()
+	opts := godog.Options{
+		Output:    colors.Colored(os.Stdout),
+		Format:    "pretty",
+		Paths:     []string{"features"},
+		Randomize: time.Now().UTC().UnixNano(), // randomize scenario execution order
 	}
 
-	return output, nil
+	status := m.Run()
+
+	status = status | godog.TestSuite{
+		Name:                "godogs",
+		ScenarioInitializer: InitializeScenario,
+		TestSuiteInitializer: func(tsc *godog.TestSuiteContext) {
+			server := AWSTestServer(goDogResponses)
+			os.Setenv("LOCAL_STACK_ENDPOINT", server.URL)
+
+			tsc.AfterSuite(func() {
+				server.Close()
+				os.Unsetenv("LOCAL_STACK_ENDPOINT")
+			})
+		},
+		Options: &opts,
+	}.Run()
+
+	os.Exit(status)
 }
 
-func TestFetchParameterStoreValues(t *testing.T) {
+// Given
+func anExistingSsmParameterWithNameAndValue(name, value string) error {
+	goDogResponses.Push(SSMParameter(name, value))
+	return nil
+}
+
+func anExistingSsmParameterWithPathAndValue(path, value string) error {
+	params[path] = value
+	return nil
+}
+
+func Execute(arg interface{}) error {
+	var err *SSMError
 	ssm := NewSSMClient(nil)
-	ssm.SSMGetParameterAPI = &SSMGetParameterImpl{}
-	result, err := ssm.SSMParameterValueToSecret(v1alpha1.ParameterStoreRef{Name: "name"})
-
-	assert.Nil(t, err)
-	assert.Equal(t, "aws-docs-example-parameter-value", result["name"])
-}
-
-type SSMGetParametersByPathImpl struct{}
-
-func (dt SSMGetParametersByPathImpl) GetParametersByPath(ctx context.Context,
-	params *ssm.GetParametersByPathInput,
-	optFns ...func(*ssm.Options)) (*ssm.GetParametersByPathOutput, error) {
-
-	parameter := types.Parameter{Name: aws.String("name"), Value: aws.String("aws-docs-example-parameter-value")}
-
-	output := &ssm.GetParametersByPathOutput{
-		Parameters: []types.Parameter{parameter},
+	switch a := arg.(type) {
+	case v1alpha1.ParameterStoreRef:
+		result, err = ssm.SSMParameterValueToSecret(a)
+	case []v1alpha1.ParametersStoreRef:
+		result, _, err = ssm.SSMParametersValueToSecret(a)
+	default:
+		return fmt.Errorf("I don't know about type %T!\n", a)
 	}
-
-	return output, nil
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
-func TestFetchParametersStoreValues(t *testing.T) {
-	ssm := NewSSMClient(nil)
-	ssm.SSMGetParameterAPI = &SSMGetParameterImpl{}
-	result, anno, err := ssm.SSMParametersValueToSecret([]v1alpha1.ParametersStoreRef{
-		v1alpha1.ParametersStoreRef{
-			Name: "NAME",
-			Key:  "name",
-		}},
-	)
+//When
+func theSsmParameterWithTheNameIsRetrieved(name string) error {
+	return Execute(v1alpha1.ParameterStoreRef{Name: name})
+}
 
-	assert.Nil(t, err)
-	assert.Len(t, anno, 0)
-	assert.Equal(t, "aws-docs-example-parameter-value", result["NAME"])
+func theSsmParameterWithThePathIsRetrieved(path string) error {
+	goDogResponses.Push(SSMParameters(params))
+	return Execute(v1alpha1.ParameterStoreRef{Path: path})
+}
+
+func theSsmParametersWithoutNameAreRetrieved() error {
+	return Execute([]v1alpha1.ParametersStoreRef{{
+		Key: "/user1/param1",
+	}, {
+		Key: "/user2/param2",
+	},
+	})
+}
+
+func theSsmParametersWithNameAreRetrieved() error {
+	return Execute([]v1alpha1.ParametersStoreRef{{
+		Name: "USER1",
+		Key:  "/user1/param1",
+	}, {
+		Name: "USER2",
+		Key:  "/user2/param2",
+	},
+	})
+}
+
+//Then
+func theParameterResultShouldBeHaving() error {
+	return nil
+}
+
+func theParameterValue(value string) error {
+	if val != value {
+		return fmt.Errorf("The value '%s' doesn't match expected value '%s", val, value)
+	}
+	return nil
+}
+
+func theParameterName(name string) error {
+	var ok bool
+	if val, ok = result[name]; !ok {
+		return fmt.Errorf("Parameter %s not found", name)
+	}
+	return nil
+}
+
+func InitializeScenario(ctx *godog.ScenarioContext) {
+	ctx.Step(`^An existing ssm parameter with name "([^"]*)" and value "([^"]*)"$`, anExistingSsmParameterWithNameAndValue)
+	ctx.Step(`^An existing ssm parameter with path "([^"]*)" and value "([^"]*)"$`, anExistingSsmParameterWithPathAndValue)
+
+	ctx.Step(`^the ssm parameter with the name "([^"]*)" is retrieved$`, theSsmParameterWithTheNameIsRetrieved)
+	ctx.Step(`^the ssm parameter with the path "([^"]*)" is retrieved$`, theSsmParameterWithThePathIsRetrieved)
+	ctx.Step(`^the ssm parameters without name are retrieved$`, theSsmParametersWithoutNameAreRetrieved)
+	ctx.Step(`^the ssm parameters with name are retrieved$`, theSsmParametersWithNameAreRetrieved)
+
+	ctx.Step(`^the parameter name "([^"]*)"$`, theParameterName)
+	ctx.Step(`^the parameter result should be having$`, theParameterResultShouldBeHaving)
+	ctx.Step(`^the parameter value "([^"]*)"$`, theParameterValue)
 }

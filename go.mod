@@ -6,6 +6,7 @@ require (
 	github.com/aws/aws-sdk-go v1.43.21
 	github.com/aws/aws-sdk-go-v2/credentials v1.10.0
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.22.0
+	github.com/cucumber/godog v0.12.4
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.18.1
 	github.com/pkg/errors v0.9.1
