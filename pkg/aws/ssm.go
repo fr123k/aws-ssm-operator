@@ -7,7 +7,9 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
+
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 	"github.com/fr123k/aws-ssm-operator/api/v1alpha1"
 
@@ -19,28 +21,25 @@ var log = logf.Log.WithName("parameterstore-controller")
 
 // SSMClient preserves AWS config and SSM client itself
 type SSMClient struct {
-	cfg                       *aws.Config
-	Ssm                       *ssm.Client
-	ctx                       context.Context
-	SSMGetParameterAPI        SSMGetParameterAPI
-	SSMGetParametersByPathAPI SSMGetParametersByPathAPI
+	cfg *aws.Config
+	Ssm *ssm.Client
+	ctx context.Context
 }
 
 func NewSSMClient(cfg *aws.Config) *SSMClient {
+	ctx := context.TODO()
 	if cfg == nil {
-		cfg = AWSCfg()
+		cfg = AWSCfg(ctx)
 	}
 	ssm := ssm.NewFromConfig(*cfg)
 	return &SSMClient{
-		cfg:                       cfg,
-		ctx:                       context.TODO(),
-		Ssm:                       ssm,
-		SSMGetParameterAPI:        ssm,
-		SSMGetParametersByPathAPI: ssm,
+		cfg: cfg,
+		ctx: ctx,
+		Ssm: ssm,
 	}
 }
 
-func AWSCfg() *aws.Config {
+func AWSCfg(ctx context.Context) *aws.Config {
 	if lsEp := os.Getenv("LOCAL_STACK_ENDPOINT"); lsEp != "" {
 		customResolver := aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
 			if lsEp != "" {
@@ -62,43 +61,22 @@ func AWSCfg() *aws.Config {
 		}
 		return cfg
 	}
-	return &aws.Config{}
-}
+	cfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		log.Error(err, "error loading default aws config")
 
-type SSMError struct {
-	Err             error
-	ParameterErrors []ParameterError
-}
-
-type ParameterError struct {
-	Name string
-	Err  error
-}
-
-func (e *SSMError) Error() string {
-	if e.Err != nil {
-		return e.Err.Error()
 	}
-	var b strings.Builder
-
-	for _, err := range e.ParameterErrors {
-		b.WriteString(err.Error())
-	}
-	return b.String()
-}
-
-func (e *ParameterError) Error() string {
-	return fmt.Sprintf("%s %s", e.Name, e.Err)
+	return &cfg
 }
 
 // SSMParameterValueToSecret shapes fetched value so as to store them into K8S Secret
 func (c *SSMClient) SSMParameterValueToSecret(ref v1alpha1.ParameterStoreRef) (map[string]string, *SSMError) {
 	if ref.Name != "" {
-		return c.GetParameterByName(c.SSMGetParameterAPI, ref.Name)
+		return c.GetParameterByName(ref.Name)
 	} else if ref.Path != "" {
-		return c.GetParameterByPath(c.SSMGetParametersByPathAPI, ref.Path, ref.Recursive)
+		return c.GetParameterByPath(ref.Path, ref.Recursive)
 	}
-	return map[string]string{}, nil
+	return nil, NewSSMError("Invalid ParameterStoreRef provided atleast Name or Path has to be set.")
 }
 
 func (c *SSMClient) FetchParametersStoreValues(refs []v1alpha1.ParametersStoreRef) (map[string]string, map[string]string, *SSMError) {
@@ -109,7 +87,7 @@ func (c *SSMClient) FetchParametersStoreValues(refs []v1alpha1.ParametersStoreRe
 
 	for _, ref := range refs {
 		log.Info("fetching values from SSM Parameter Store", "Key", ref.Key, "Name", ref.Name)
-		got, err := c.GetParameterByName(c.SSMGetParameterAPI, ref.Key)
+		got, err := c.GetParameterByName(ref.Key)
 		if err != nil {
 			log.Error(err, "error fetching values from SSM Parameter Store", "Key", ref.Key, "Name", ref.Name)
 			anno[fmt.Sprintf("ssm.aws/%s_error", ref.Name)] = err.Error()
@@ -120,6 +98,7 @@ func (c *SSMClient) FetchParametersStoreValues(refs []v1alpha1.ParametersStoreRe
 		name := ref.Name
 		for k, v := range got {
 			if name == "" {
+				//TODO make this configurable in the ParameterStore crd
 				ss := strings.Split(k, "/")
 				name = strings.ToUpper(ss[len(ss)-1])
 				name = strings.ReplaceAll(name, "-", "_")
@@ -147,13 +126,9 @@ func (c *SSMClient) SSMParametersValueToSecret(ref []v1alpha1.ParametersStoreRef
 	return params, anno, nil
 }
 
-func FindParameter(ctx context.Context, api SSMGetParameterAPI, input *ssm.GetParameterInput) (*ssm.GetParameterOutput, error) {
-	return api.GetParameter(ctx, input)
-}
-
-func (c *SSMClient) GetParameterByName(api SSMGetParameterAPI, name string) (map[string]string, *SSMError) {
+func (c *SSMClient) GetParameterByName(name string) (map[string]string, *SSMError) {
 	log.Info("fetching values from SSM Parameter Store by name", "Name", name)
-	got, err := FindParameter(c.ctx, api, &ssm.GetParameterInput{
+	got, err := c.Ssm.GetParameter(c.ctx, &ssm.GetParameterInput{
 		Name:           &name,
 		WithDecryption: true,
 	})
@@ -164,30 +139,31 @@ func (c *SSMClient) GetParameterByName(api SSMGetParameterAPI, name string) (map
 	return map[string]string{*got.Parameter.Name: *got.Parameter.Value}, nil
 }
 
-func FindParametersByPath(ctx context.Context, api SSMGetParametersByPathAPI, input *ssm.GetParametersByPathInput) (*ssm.GetParametersByPathOutput, error) {
-	return api.GetParametersByPath(ctx, input)
-}
-
-func (c *SSMClient) GetParameterByPath(api SSMGetParametersByPathAPI, path string, recursive bool) (map[string]string, *SSMError) {
+func (c *SSMClient) GetParameterByPath(path string, recursive bool) (map[string]string, *SSMError) {
 	log.Info("fetching values from SSM Parameter Store by path", "Path", path, "Recursive", recursive)
-	got, err := FindParametersByPath(c.ctx, api, &ssm.GetParametersByPathInput{
+	page := ssm.NewGetParametersByPathPaginator(c.Ssm, &ssm.GetParametersByPathInput{
 		Path:           &path,
 		WithDecryption: true,
 		Recursive:      recursive,
-		MaxResults:     100,
+		MaxResults:     10,
 	})
-	if err != nil {
-		return nil, &SSMError{Err: err}
-	}
+	dict := make(map[string]string)
+	p := 0
+	for p++; page.HasMorePages(); {
+		got, err := page.NextPage(c.ctx)
 
-	log.Info("fetching values from SSM Parameter Store by path", "Params", fmt.Sprintf("%+v", got.Parameters))
+		if err != nil {
+			return nil, &SSMError{Err: err}
+		}
 
-	dict := make(map[string]string, len(got.Parameters))
-	for _, p := range got.Parameters {
-		ss := strings.Split(*p.Name, "/")
-		name := strings.ToUpper(ss[len(ss)-1])
-		name = strings.ReplaceAll(name, "-", "_")
-		dict[name] = *p.Value
+		log.Info("fetching values from SSM Parameter Store by path", "Page", fmt.Sprintf("%d", p), "Retrieved Params", len(got.Parameters))
+
+		for _, p := range got.Parameters {
+			ss := strings.Split(*p.Name, "/")
+			name := strings.ToUpper(ss[len(ss)-1])
+			name = strings.ReplaceAll(name, "-", "_")
+			dict[name] = *p.Value
+		}
 	}
 
 	return dict, nil
