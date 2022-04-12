@@ -4,7 +4,7 @@ metadata:
   annotations:
     update: now
   name: foo-app-keys
-  namespace: default
+  namespace: test
 spec:
   valueFrom:
     parametersStoreRef:

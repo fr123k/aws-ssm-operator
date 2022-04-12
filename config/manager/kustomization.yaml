@@ -13,4 +13,4 @@ kind: Kustomization
 images:
 - name: controller
   newName: fr123k/aws-ssm-operator
-  newTag: 0.0.2
+  newTag: v0.2.0
