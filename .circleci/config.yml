@@ -13,6 +13,9 @@ commands:
           name: build image
           command: |
             make docker-build
+            ls -lha ~/.cache/go-build || true
+            ls -lha "/go/pkg/mod" || true
+            go env
 
   push-images:
     steps:
@@ -30,11 +33,18 @@ jobs:
       - setup_remote_docker:
           docker_layer_caching: true
       - checkout
+      - restore_cache: # restores saved cache if no changes are detected since last run
+          keys:
+            - go-mod-v4-{{ checksum "go.sum" }}
       - build
+      - save_cache:
+          key: go-mod-v4-{{ checksum "go.sum" }}
+          paths:
+            - "/go/pkg/mod"
       - when:
           condition:
             and:
-              - equal: ["main", << pipeline.git.branch >>]
+              - equal: ["fr/add_circleci", << pipeline.git.branch >>]
           steps:
             - push-images
 
