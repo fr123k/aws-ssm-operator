@@ -1,0 +1,39 @@
+circleci-image: &circleci-image
+  - image: fr123k/circleci-golang:latest
+
+version: 2.1
+commands:
+  build:
+    steps:
+      - run:
+          name: build image
+          command: |
+            make docker-build
+
+  push-images:
+    steps:
+      - run:
+          name: push image to dockerhub
+          command: |
+            echo ${DOCKER_TOKEN} | docker login -u ${DOCKER_USER} --password-stdin
+            make docker-push
+jobs:
+  build:
+    docker: *circleci-image
+    resource_class: small
+    steps:
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - checkout
+      - build
+      - when:
+          condition:
+            and:
+              - equal: ["main", << pipeline.git.branch >>]
+          steps:
+            - push-images
+
+workflows:
+  build:
+    jobs:
+      - build
