@@ -42,7 +42,6 @@ import (
 	ssmv1alpha1 "github.com/fr123k/aws-ssm-operator/api/v1alpha1"
 
 	"github.com/fr123k/aws-ssm-operator/pkg/aws"
-	awsCli "github.com/fr123k/aws-ssm-operator/pkg/aws"
 )
 
 // var log = logf.Log.WithName("parameterstore-controller")
@@ -52,7 +51,7 @@ type ParameterStoreReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
 
-	SSMc *awsCli.SSMClient
+	SSMc *aws.SSMClient
 }
 
 //+kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch;create;update;patch;delete
@@ -95,7 +94,7 @@ func (r *ParameterStoreReconciler) Reconcile(ctx context.Context, req ctrl.Reque
 		var ssmStatus ssmv1alpha1.SSMStatus
 		var conditionType string
 		// Update status.Nodes if needed
-		if ssmErr, ok := err.(*awsCli.SSMError); ok {
+		if ssmErr, ok := err.(*aws.SSMError); ok {
 			ks := make([]ssmv1alpha1.KeyStatus, len(ssmErr.ParameterErrors))
 			for i, e := range ssmErr.ParameterErrors {
 				ks[i] = ssmv1alpha1.KeyStatus{Name: e.Name, Error: e.Error()}
