@@ -42,7 +42,7 @@ jobs:
       - when:
           condition:
             and:
-              - equal: ["fr/add_circleci", << pipeline.git.branch >>]
+              - equal: ["master", << pipeline.git.branch >>]
           steps:
             - push-images
 
