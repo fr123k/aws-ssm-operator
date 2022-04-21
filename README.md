@@ -1,4 +1,5 @@
-[![Build Status](https://img.shields.io/badge/dockerhub-fr123k%2Faws--ssm--operator-blue?style=plastic
+[![CircleCI](https://circleci.com/gh/fr123k/aws-ssm-operator/tree/master.svg?style=svg)](https://circleci.com/gh/fr123k/aws-ssm-operator/tree/master)
+[![DockerHub](https://img.shields.io/badge/dockerhub-fr123k%2Faws--ssm--operator-blue?style=plastic
 )](https://hub.docker.com/r/fr123k/aws-ssm-operator)
 
 # aws-ssm-operator
