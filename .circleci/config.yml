@@ -1,6 +1,10 @@
 circleci-image: &circleci-image
   - image: fr123k/circleci-golang:latest
 
+environment: &environment
+  DOCKER_BUILDKIT: 1
+  DOCKER_BUILD_CLI_ARGS: --progress=plain
+
 version: 2.1
 commands:
   build:
@@ -21,6 +25,7 @@ jobs:
   build:
     docker: *circleci-image
     resource_class: small
+    environment: *environment
     steps:
       - setup_remote_docker:
           docker_layer_caching: true
