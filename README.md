@@ -1,3 +1,6 @@
+[![Build Status](https://img.shields.io/badge/dockerhub-fr123k%2Faws--ssm--operator-blue?style=plastic
+)](https://hub.docker.com/r/fr123k/aws-ssm-operator)
+
 # aws-ssm-operator
 
 A Kubernetes operator that automatically maps what are stored in AWS SSM Parameter Store into Kubernetes Secrets.
